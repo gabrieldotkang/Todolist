@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   
-  <!-- PWA & 모바일 전체화면(Standalone) 메타 태그 -->
   <meta name="theme-color" content="#4F46E5">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -12,11 +11,10 @@
   <meta name="apple-mobile-web-app-title" content="메이트 To-Do">
   <title>나의 AI 메이트 To-Do</title>
 
-  <!-- 내장형 SVG 앱 아이콘 (외부 이미지 파일 불필요) -->
+  <!-- PWA 내장형 SVG 앱 아이콘 -->
   <link id="faviconLink" rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='120' fill='%234F46E5'/%3E%3Cpath d='M368 176L224 320l-80-80' stroke='%23ffffff' stroke-width='48' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='380' cy='132' r='24' fill='%23FBBF24'/%3E%3C/svg%3E">
   <link id="appleTouchIcon" rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='120' fill='%234F46E5'/%3E%3Cpath d='M368 176L224 320l-80-80' stroke='%23ffffff' stroke-width='48' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='380' cy='132' r='24' fill='%23FBBF24'/%3E%3C/svg%3E">
 
-  <!-- 동적 Web App Manifest 연결용 링크 -->
   <link id="manifestLink" rel="manifest" href="">
 
   <script src="https://cdn.tailwindcss.com"></script>
@@ -39,16 +37,48 @@
       0%, 100% { opacity: 1; }
       50% { opacity: 0.4; }
     }
+    /* 상단 슬라이드 다운 애니메이션 */
+    @keyframes slideDown {
+      from { transform: translateY(-100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .animate-slide-down {
+      animation: slideDown 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
   </style>
 </head>
-<body class="max-w-md mx-auto min-h-screen flex flex-col pb-24 shadow-lg bg-gray-50">
+<body class="max-w-md mx-auto min-h-screen flex flex-col pb-24 shadow-lg bg-gray-50 relative">
+
+  <!-- [요구사항 1] 상단 고정 알람 팝업 배너 (z-index 9999로 최상단 보장) -->
+  <aside id="topAlarmBanner" class="fixed top-3 left-3 right-3 max-w-md mx-auto hidden z-[9999] animate-slide-down">
+    <div class="bg-indigo-900/95 backdrop-blur-md text-white p-4 rounded-2xl shadow-2xl border-2 border-indigo-400/80 flex flex-col space-y-2.5">
+      <div class="flex items-start justify-between">
+        <div class="flex items-center space-x-2">
+          <span class="text-2xl animate-bounce">⏰</span>
+          <div>
+            <h4 id="topAlarmTitle" class="text-sm font-bold text-amber-300">목표 마감 알람</h4>
+            <p id="topAlarmMessage" class="text-xs text-indigo-100 font-medium line-clamp-2 mt-0.5"></p>
+          </div>
+        </div>
+        <button onclick="dismissTopAlarm()" class="text-indigo-300 hover:text-white p-1 text-sm font-bold">✕</button>
+      </div>
+      <div class="flex items-center justify-end space-x-2 pt-1 border-t border-indigo-700/60">
+        <button id="topAlarmSpeakBtn" onclick="speakCurrentAlarmText()" class="text-[11px] bg-indigo-800 hover:bg-indigo-700 text-indigo-200 px-2.5 py-1 rounded-lg">
+          🔊 코치 한마디 듣기
+        </button>
+        <button id="topAlarmCompleteBtn" class="text-[11px] bg-amber-400 hover:bg-amber-300 text-indigo-950 font-bold px-3 py-1 rounded-lg shadow">
+          지금 완료 체크
+        </button>
+      </div>
+    </div>
+  </aside>
 
   <!-- 상단 헤더 & 상태 표시줄 -->
   <header class="bg-indigo-600 text-white p-3.5 sticky top-0 z-20 shadow-md">
     <div class="flex justify-between items-center">
       <div class="flex items-center space-x-2">
         <span class="text-lg font-bold">✨ 메이트 To-Do</span>
-        <span id="storageBadge" class="text-[10px] bg-green-500 text-white px-2 py-0.5 rounded-full font-semibold">PWA 활성</span>
+        <span id="storageBadge" class="text-[10px] bg-green-500 text-white px-2 py-0.5 rounded-full font-semibold">PWA 정상</span>
       </div>
       <div class="flex items-center space-x-1.5">
         <button id="installAppBtn" onclick="installPWA()" class="hidden bg-amber-400 hover:bg-amber-500 text-indigo-950 text-xs font-bold px-2.5 py-1 rounded-full shadow">
@@ -57,48 +87,53 @@
         <span id="currentDateDisplay" class="text-xs bg-indigo-500 px-2.5 py-1 rounded-full"></span>
       </div>
     </div>
-    <!-- 알람 엔진 실시간 상태바 -->
+    <!-- 알람 상태 및 사운드 모드 제어바 -->
     <div class="mt-2 pt-2 border-t border-indigo-500/60 flex justify-between items-center text-xs text-indigo-100">
-      <div class="flex items-center space-x-1.5">
+      <div class="flex items-center space-x-1.5 truncate max-w-[200px]">
         <span class="w-2 h-2 rounded-full bg-green-400 pulse-ring"></span>
-        <span id="alarmStatusText">알람 대기 중 (터치 시 소리 활성화)</span>
+        <span id="alarmStatusText" class="truncate">알람 대기 중</span>
       </div>
-      <button onclick="toggleWakeLock()" id="wakeLockBtn" class="bg-indigo-700 hover:bg-indigo-800 px-2 py-0.5 rounded text-[11px] font-semibold">
-        💡 화면켜짐: OFF
-      </button>
+      <div class="flex items-center space-x-1">
+        <!-- 알람 사운드/진동 모드 토글 버튼 -->
+        <button onclick="toggleSoundMode()" id="soundModeBtn" class="bg-indigo-700 hover:bg-indigo-800 px-2 py-0.5 rounded text-[11px] font-semibold">
+          🔔 소리 모드
+        </button>
+        <button onclick="toggleWakeLock()" id="wakeLockBtn" class="bg-indigo-700 hover:bg-indigo-800 px-2 py-0.5 rounded text-[11px] font-semibold">
+          💡 화면켜짐: OFF
+        </button>
+      </div>
     </div>
   </header>
 
-  <!-- 4. 캐릭터 독려 & 칭찬 영역 -->
+  <!-- 캐릭터 영역 -->
   <section id="characterSection" class="bg-white p-3.5 m-3 rounded-2xl shadow-sm border border-indigo-100 flex items-center space-x-3.5">
     <div id="charAvatar" class="text-5xl character-bounce cursor-pointer" onclick="triggerCharacterEncourage()">🤖</div>
     <div class="flex-1">
       <div class="flex justify-between items-center mb-1">
         <span id="charName" class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">열정 코치 제이</span>
-        <button onclick="testAudioAndVoice()" class="text-[11px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded font-semibold">🔊 소리/알람 테스트</button>
+        <button onclick="testAlarmAndSound()" class="text-[11px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded font-semibold">🔔 알람 1회 테스트</button>
       </div>
-      <p id="charBubble" class="text-xs text-gray-700 font-medium leading-relaxed">홈 화면에 추가하시면 주소창 없이 진짜 앱처럼 쾌적하게 쓰실 수 있어요!</p>
+      <p id="charBubble" class="text-xs text-gray-700 font-medium leading-relaxed">알람이 울릴 때 방해되지 않도록 음성 없이 1회 알람음(또는 진동)만 깔끔하게 울립니다!</p>
     </div>
   </section>
 
-  <!-- 메인 컨텐츠 영역 -->
+  <!-- 메인 탭 컨텐츠 -->
   <main class="flex-1 px-3">
-
-    <!-- [탭 1] 할 일 관리 -->
+    <!-- [탭 1] 할 일 목록 -->
     <div id="tab-todo" class="space-y-3.5">
       <div class="bg-white p-4 rounded-2xl shadow-sm space-y-3">
-        <input id="todoInput" type="text" placeholder="할 일을 입력하세요 (예: 영어 회화 복습)" 
+        <input id="todoInput" type="text" placeholder="할 일을 입력하세요 (예: 영어 회화 1챕터 섀도잉)" 
                class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500">
         
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="block text-xs text-gray-500 mb-1">⏰ 목표 마감 시간</label>
+            <label class="block text-xs text-gray-500 mb-1">⏰ 마감 목표 시간</label>
             <input id="todoDeadline" type="time" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold">
           </div>
           <div id="alarmIntervalBox">
-            <label class="block text-xs text-gray-500 mb-1">🔔 사전 독려 주기</label>
+            <label class="block text-xs text-gray-500 mb-1">🔔 주기적 알람 간격</label>
             <select id="todoInterval" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-xl text-sm">
-              <option value="1">1분마다 (즉시 테스트용)</option>
+              <option value="1">1분마다 (테스트)</option>
               <option value="5">5분마다</option>
               <option value="10">10분마다</option>
               <option value="15">15분마다</option>
@@ -113,20 +148,19 @@
         </button>
       </div>
 
-      <!-- 오늘 진행률 요약 바 -->
+      <!-- 진행률 요약 -->
       <div id="quickProgressBox" class="bg-indigo-50 p-3 rounded-xl flex items-center justify-between">
-        <span class="text-xs font-semibold text-indigo-800">오늘의 달성률</span>
+        <span class="text-xs font-semibold text-indigo-800">오늘의 완료율</span>
         <div class="w-1/2 bg-indigo-200 rounded-full h-2.5 overflow-hidden">
           <div id="todayProgressBar" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
         </div>
         <span id="todayProgressText" class="text-xs font-bold text-indigo-800">0% (0/0)</span>
       </div>
 
-      <!-- 할 일 목록 리스트 -->
       <div id="todoListContainer" class="space-y-2.5 pb-6"></div>
     </div>
 
-    <!-- [탭 2] 2. 완료 추이 통계 (일/주/월) -->
+    <!-- [탭 2] 통계 -->
     <div id="tab-stats" class="hidden space-y-4 pb-6">
       <div class="bg-white p-4 rounded-2xl shadow-sm">
         <div class="flex space-x-2 mb-4">
@@ -141,20 +175,19 @@
       </div>
 
       <div class="bg-white p-4 rounded-2xl shadow-sm">
-        <h3 class="text-sm font-bold text-gray-800 mb-3">📊 할 일별 누적 완수 리포트 (주간/월간)</h3>
+        <h3 class="text-sm font-bold text-gray-800 mb-3">📊 할 일별 완료 리포트</h3>
         <div id="taskBreakdownList" class="space-y-2 text-xs text-gray-700"></div>
       </div>
     </div>
 
-    <!-- [탭 3] 6. 기능 Enable/Disable 설정 & 백업 -->
+    <!-- [탭 3] 설정 -->
     <div id="tab-settings" class="hidden space-y-4 pb-6">
-      <!-- 데이터 영구 백업/복원 -->
       <div class="bg-white p-4 rounded-2xl shadow-sm space-y-3 border border-indigo-100">
-        <h3 class="text-sm font-bold text-indigo-700 border-b pb-2">💾 데이터 파일 백업 / 기기 간 이동</h3>
-        <p class="text-xs text-gray-500 leading-relaxed">할 일 기록을 JSON 파일로 백업하거나 다른 기기(PC/태블릿)로 옮길 때 사용하세요.</p>
+        <h3 class="text-sm font-bold text-indigo-700 border-b pb-2">💾 데이터 백업 및 복원</h3>
+        <p class="text-xs text-gray-500 leading-relaxed">할 일 데이터를 JSON 파일로 저장하거나 새 기기로 옮길 수 있습니다.</p>
         <div class="grid grid-cols-2 gap-2">
           <button onclick="exportDataFile()" class="bg-indigo-600 text-white py-2 rounded-xl text-xs font-bold shadow-sm">
-            📥 파일로 백업하기
+            📥 파일로 백업
           </button>
           <label class="bg-gray-100 hover:bg-gray-200 text-gray-800 py-2 rounded-xl text-xs font-bold text-center cursor-pointer border border-gray-300">
             📤 백업 불러오기
@@ -164,28 +197,28 @@
       </div>
 
       <div class="bg-white p-4 rounded-2xl shadow-sm space-y-4">
-        <h3 class="text-sm font-bold text-gray-800 border-b pb-2">⚙️ 6대 핵심 기능 Enable 설정</h3>
+        <h3 class="text-sm font-bold text-gray-800 border-b pb-2">⚙️ 모듈 Enable 설정</h3>
 
         <div class="flex justify-between items-center">
           <div>
-            <p class="text-sm font-semibold text-gray-800">1. 마감 & 주기 알람 기능</p>
-            <p class="text-xs text-gray-400">마감 시간 정각 및 주기별 카운트다운 알람</p>
+            <p class="text-sm font-semibold text-gray-800">1. 마감 & 주기 알람</p>
+            <p class="text-xs text-gray-400">마감 시간 및 주기 도달 시 상단 팝업</p>
           </div>
           <input type="checkbox" id="toggleAlarm" onchange="updateSettings()" class="w-5 h-5 accent-indigo-600">
         </div>
 
         <div class="flex justify-between items-center">
           <div>
-            <p class="text-sm font-semibold text-gray-800">2. 완료 추이 통계 (일/주/월)</p>
-            <p class="text-xs text-gray-400">달성률 그래프 및 할 일별 누적 리포트</p>
+            <p class="text-sm font-semibold text-gray-800">2. 완료 추이 통계</p>
+            <p class="text-xs text-gray-400">일간/주간/월간 차트 표시</p>
           </div>
           <input type="checkbox" id="toggleStats" onchange="updateSettings()" class="w-5 h-5 accent-indigo-600">
         </div>
 
         <div class="flex justify-between items-center">
           <div>
-            <p class="text-sm font-semibold text-gray-800">3. 칭찬 팝업 & 맞춤 보상 추천</p>
-            <p class="text-xs text-gray-400">할 일 완료 시 키워드 기반 보상 제안</p>
+            <p class="text-sm font-semibold text-gray-800">3. 완료 칭찬 & 보상 추천</p>
+            <p class="text-xs text-gray-400">할 일 완료 시 내용 맞춤 보상 제안</p>
           </div>
           <input type="checkbox" id="toggleReward" onchange="updateSettings()" class="w-5 h-5 accent-indigo-600">
         </div>
@@ -193,69 +226,51 @@
         <div class="flex justify-between items-center">
           <div>
             <p class="text-sm font-semibold text-gray-800">4. 독려 캐릭터 표시</p>
-            <p class="text-xs text-gray-400">상단 캐릭터 애니메이션 및 응원 대화창</p>
+            <p class="text-xs text-gray-400">상단 캐릭터 애니메이션 및 대화창</p>
           </div>
           <input type="checkbox" id="toggleCharacter" onchange="updateSettings()" class="w-5 h-5 accent-indigo-600">
         </div>
 
         <div class="flex justify-between items-center">
           <div>
-            <p class="text-sm font-semibold text-gray-800">5. 캐릭터 음성(TTS) 말하기</p>
-            <p class="text-xs text-gray-400">알람 및 칭찬 시 캐릭터가 음성으로 리딩</p>
+            <p class="text-sm font-semibold text-gray-800">5. 완료 시 캐릭터 음성(TTS)</p>
+            <p class="text-xs text-gray-400">완료 축하 시 캐릭터 목소리로 리딩</p>
           </div>
           <input type="checkbox" id="toggleVoice" onchange="updateSettings()" class="w-5 h-5 accent-indigo-600">
         </div>
       </div>
 
       <div class="bg-white p-4 rounded-2xl shadow-sm space-y-3">
-        <h3 class="text-sm font-bold text-gray-800 border-b pb-2">🎭 캐릭터 선택 및 시스템 권한</h3>
+        <h3 class="text-sm font-bold text-gray-800 border-b pb-2">🎭 캐릭터 선택</h3>
         <select id="selectPersona" onchange="changePersona()" class="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm">
-          <option value="coach">🤖 열정 코치 제이 (에너지 넘치는 응원)</option>
-          <option value="butler">🤵 다정한 집사 세바스찬 (정중하고 따뜻한 격려)</option>
-          <option value="fairy">🧚 상큼 요정 루미 (발랄하고 친근한 칭찬)</option>
+          <option value="coach">🤖 열정 코치 제이 (열정적 응원)</option>
+          <option value="butler">🤵 다정한 집사 세바스찬 (정중한 격려)</option>
+          <option value="fairy">🧚 상큼 요정 루미 (친근한 칭찬)</option>
         </select>
         <button onclick="requestNotificationPermission()" class="w-full py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold">
           🔔 갤럭시 상단바 시스템 알림 권한 켜기
         </button>
       </div>
     </div>
-
   </main>
 
-  <!-- 인앱 알람 발동 팝업 -->
-  <div id="alarmActiveModal" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-3xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl border-2 border-indigo-500">
-      <div class="text-5xl animate-bounce">⏰</div>
-      <h3 class="text-lg font-bold text-red-600">알람 시간입니다!</h3>
-      <p id="alarmModalDesc" class="text-sm text-gray-800 font-semibold leading-relaxed"></p>
-      <div class="flex space-x-2">
-        <button onclick="dismissAlarmModal()" class="flex-1 bg-gray-200 text-gray-800 font-bold py-2.5 rounded-xl text-xs">
-          계속 진행하기
-        </button>
-        <button id="alarmModalCompleteBtn" class="flex-1 bg-indigo-600 text-white font-bold py-2.5 rounded-xl text-xs">
-          지금 완료 체크!
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 3. 칭찬 및 맞춤형 보상 모달 팝업 -->
-  <div id="rewardModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 p-4">
+  <!-- 3. 완료 칭찬 및 보상 모달 -->
+  <div id="rewardModal" class="fixed inset-0 bg-black/60 hidden items-center justify-center z-50 p-4">
     <div class="bg-white rounded-3xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl">
       <div class="text-6xl">🎉</div>
-      <h3 class="text-lg font-bold text-indigo-700">완벽하게 해내셨군요!</h3>
+      <h3 class="text-lg font-bold text-indigo-700">목표 달성을 축하합니다!</h3>
       <p id="modalPraise" class="text-sm text-gray-600 leading-relaxed"></p>
       <div class="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl text-left">
-        <span class="text-xs font-bold text-amber-700 block mb-1">🎁 할 일 맞춤형 보상 추천</span>
+        <span class="text-xs font-bold text-amber-700 block mb-1">🎁 맞춤형 보상 제안</span>
         <p id="modalRewardText" class="text-sm font-semibold text-gray-800"></p>
       </div>
       <button onclick="closeRewardModal()" class="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-xl text-sm">
-        기분 좋게 보상 받기!
+        기분 좋게 보상 받기
       </button>
     </div>
   </div>
 
-  <!-- 하단 네비게이션 -->
+  <!-- 하단 탭바 -->
   <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-gray-200 flex justify-around py-2.5 z-20">
     <button onclick="switchTab('todo')" id="nav-todo" class="flex flex-col items-center text-indigo-600 font-bold text-xs">
       <span class="text-lg">✅</span><span>할 일</span>
@@ -269,59 +284,7 @@
   </nav>
 
   <script>
-    // --- PWA 매니페스트 및 서비스워커 단일 파일 동적 생성 ---
-    let deferredPrompt = null;
-
-    function setupSingleFilePWA() {
-      const svgIcon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='120' fill='%234F46E5'/%3E%3Cpath d='M368 176L224 320l-80-80' stroke='%23ffffff' stroke-width='48' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='380' cy='132' r='24' fill='%23FBBF24'/%3E%3C/svg%3E";
-
-      const manifestObj = {
-        name: "나의 AI 메이트 To-Do",
-        short_name: "메이트 To-Do",
-        description: "캐릭터 음성 독려 및 완료 추이 관리 To-Do 앱",
-        start_url: window.location.href,
-        display: "standalone",
-        orientation: "portrait",
-        background_color: "#F3F4F6",
-        theme_color: "#4F46E5",
-        icons: [
-          { src: svgIcon, sizes: "192x192", type: "image/svg+xml", purpose: "any maskable" },
-          { src: svgIcon, sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }
-        ]
-      };
-
-      const manifestStr = encodeURIComponent(JSON.stringify(manifestObj));
-      document.getElementById('manifestLink').setAttribute('href', `data:application/manifest+json,${manifestStr}`);
-
-      // 갤럭시 크롬 앱 설치 프롬프트 감지
-      window.addEventListener('beforeinstallprompt', (e) => {
-        e.preventDefault();
-        deferredPrompt = e;
-        document.getElementById('installAppBtn').classList.remove('hidden');
-      });
-
-      // 이미 전체 화면(Standalone) 앱으로 실행 중인지 확인
-      if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
-        const badge = document.getElementById('storageBadge');
-        badge.innerText = '앱 모드 실행중';
-        badge.className = 'text-[10px] bg-indigo-900 text-amber-300 px-2 py-0.5 rounded-full font-bold';
-      }
-    }
-
-    async function installPWA() {
-      if (deferredPrompt) {
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        if (outcome === 'accepted') {
-          document.getElementById('installAppBtn').classList.add('hidden');
-        }
-        deferredPrompt = null;
-      } else {
-        alert('브라우저 우측 상단(또는 하단) 메뉴 [⋮]를 누른 뒤 [홈 화면에 추가]를 선택하시면 전용 앱으로 설치됩니다!');
-      }
-    }
-
-    // --- 한국 표준시(로컬 시간) 날짜 포맷 함수 ---
+    // --- 0. 기본 포맷 및 스토리지 키 ---
     function getLocalDateStr(d = new Date()) {
       const year = d.getFullYear();
       const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -335,7 +298,6 @@
       return `${hours}:${mins}`;
     }
 
-    // --- 이중 영구 저장소 (LocalStorage + IndexedDB) ---
     const STORAGE_KEY_TODOS = 'galaxy_todo_items_v2';
     const STORAGE_KEY_SETTINGS = 'galaxy_todo_settings_v2';
     const DB_NAME = 'GalaxyTodoCompanionDB';
@@ -348,6 +310,7 @@
       enableReward: true,
       enableCharacter: true,
       enableVoice: true,
+      soundMode: 'sound', // 'sound' (소리모드) | 'vibrate' (진동모드)
       persona: 'coach'
     };
 
@@ -355,54 +318,94 @@
     let wakeLockSentinel = null;
     let currentStatMode = 'daily';
     let chartInstance = null;
+    let lastActiveAlarmText = '';
+    let deferredPrompt = null;
 
     const personas = {
       coach: {
         name: '열정 코치 제이', avatar: '🤖', pitch: 1.0, rate: 1.05,
         encourage: [
-          '목표 시간까지 얼마 남지 않았어요! 지금 바로 집중해 봅시다!',
-          '작은 실행이 큰 성취를 만듭니다. 하나씩 격파해 볼까요?',
-          '포기하지 마세요! 완료 체크를 누르는 그 짜릿한 순간을 상상해 보세요!'
+          '목표 시간까지 집중력을 한 번 더 발휘해 볼까요?',
+          '작은 마무리가 모여 큰 실력이 됩니다. 힘내세요!',
+          '포기하지 마세요! 완료 버튼을 누르는 순간 성취감이 찾아옵니다!'
         ],
         praise: [
-          '대단합니다! 역시 해내실 줄 알았어요! 오늘의 챔피언은 바로 당신입니다!',
-          '완벽한 실행력이에요! 성실함이 차곡차곡 쌓여 엄청난 결과를 만들고 있습니다!'
+          '해내셨군요! 대단합니다! 오늘의 멋진 성과입니다!',
+          '꾸준한 실행력이 정말 돋보입니다. 진심으로 축하드립니다!'
         ]
       },
       butler: {
         name: '다정한 집사 세바스찬', avatar: '🤵', pitch: 0.85, rate: 0.95,
         encourage: [
-          '주인님, 예정된 마감 시간이 다가오고 있습니다. 차분히 마무리해 보시지요.',
-          '무리하지 마시되, 오늘 계획하신 일들을 하나씩 살펴보시는 건 어떨까요?'
+          '예정된 마감 시간이 가까워지고 있습니다. 차분히 진행해 보시지요.',
+          '무리하지 마시고 계획하신 순서대로 하나씩 짚어보시길 권합니다.'
         ],
         praise: [
-          '정말 고생 많으셨습니다. 품격 있는 집중력이 돋보이는 완벽한 마무리였습니다.',
-          '훌륭하십니다! 계획하신 바를 정교하게 완수하셨군요. 이제 잠시 숨을 돌리시지요.'
+          '정말 수고 많으셨습니다. 차분하고 정확한 마무리였습니다.',
+          '훌륭한 집중력이었습니다. 잠시 휴식을 취하셔도 좋겠습니다.'
         ]
       },
       fairy: {
         name: '상큼 요정 루미', avatar: '🧚', pitch: 1.3, rate: 1.1,
         encourage: [
-          '얍! 미뤄둔 할 일이 부르고 있어요! 후딱 끝내고 신나게 쉬자구요!',
-          '조금만 더 힘내요! 루미가 옆에서 반짝반짝 응원하고 있답니다!'
+          '조금만 더 힘내요! 루미가 옆에서 열심히 응원하고 있어요!',
+          '얼른 끝내고 기분 좋게 푹 쉬어봐요!'
         ],
         praise: [
-          '우와아! 진짜 멋져요! 이렇게 깔끔하게 끝내다니 완전 최고예요!',
-          '짝짝짝! 오늘 목표 클리어! 스스로를 듬뿍 칭찬해 주세요!'
+          '와아! 정말 멋지게 해내셨어요! 최고예요!',
+          '오늘 미션 성공! 스스로를 듬뿍 칭찬해 주세요!'
         ]
       }
     };
 
+    // --- PWA 매니페스트 설정 ---
+    function setupSingleFilePWA() {
+      const svgIcon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='120' fill='%234F46E5'/%3E%3Cpath d='M368 176L224 320l-80-80' stroke='%23ffffff' stroke-width='48' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='380' cy='132' r='24' fill='%23FBBF24'/%3E%3C/svg%3E";
+      const manifestObj = {
+        name: "나의 AI 메이트 To-Do",
+        short_name: "메이트 To-Do",
+        start_url: window.location.href,
+        display: "standalone",
+        orientation: "portrait",
+        background_color: "#F3F4F6",
+        theme_color: "#4F46E5",
+        icons: [{ src: svgIcon, sizes: "192x192 512x512", type: "image/svg+xml" }]
+      };
+      document.getElementById('manifestLink').setAttribute('href', `data:application/manifest+json,${encodeURIComponent(JSON.stringify(manifestObj))}`);
+
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        document.getElementById('installAppBtn').classList.remove('hidden');
+      });
+
+      if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+        const badge = document.getElementById('storageBadge');
+        badge.innerText = '앱 모드';
+        badge.className = 'text-[10px] bg-indigo-900 text-amber-300 px-2 py-0.5 rounded-full font-bold';
+      }
+    }
+
+    async function installPWA() {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') document.getElementById('installAppBtn').classList.add('hidden');
+        deferredPrompt = null;
+      }
+    }
+
+    // --- 데이터 저장/로드 ---
     function openIDB() {
-      return new Promise((resolve, reject) => {
-        if (!('indexedDB' in window)) return reject('No IDB');
+      return new Promise((res, rej) => {
+        if (!('indexedDB' in window)) return rej();
         const req = indexedDB.open(DB_NAME, 1);
         req.onupgradeneeded = (e) => {
           const db = e.target.result;
           if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
         };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
+        req.onsuccess = () => res(req.result);
+        req.onerror = () => rej();
       });
     }
 
@@ -414,43 +417,89 @@
       try {
         const db = await openIDB();
         const tx = db.transaction(DB_STORE, 'readwrite');
-        const store = tx.objectStore(DB_STORE);
-        store.put(todos, 'todos');
-        store.put(settings, 'settings');
+        const s = tx.objectStore(DB_STORE);
+        s.put(todos, 'todos');
+        s.put(settings, 'settings');
       } catch (e) {}
     }
 
     async function loadAll() {
-      let loadedTodos = null;
-      let loadedSettings = null;
+      let lsTodos = null, lsSettings = null;
       try {
-        const lsTodos = localStorage.getItem(STORAGE_KEY_TODOS) || localStorage.getItem('galaxy_todo_items_v1');
-        const lsSettings = localStorage.getItem(STORAGE_KEY_SETTINGS) || localStorage.getItem('galaxy_todo_settings_v1');
-        if (lsTodos) loadedTodos = JSON.parse(lsTodos);
-        if (lsSettings) loadedSettings = JSON.parse(lsSettings);
+        lsTodos = localStorage.getItem(STORAGE_KEY_TODOS);
+        lsSettings = localStorage.getItem(STORAGE_KEY_SETTINGS);
+        if (lsTodos) todos = JSON.parse(lsTodos);
+        if (lsSettings) settings = { ...settings, ...JSON.parse(lsSettings) };
       } catch (e) {}
 
-      if (!loadedTodos) {
+      if (!todos.length) {
         try {
           const db = await openIDB();
-          loadedTodos = await new Promise((res) => {
+          const savedTodos = await new Promise((res) => {
             const req = db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).get('todos');
             req.onsuccess = () => res(req.result);
             req.onerror = () => res(null);
           });
-          loadedSettings = await new Promise((res) => {
-            const req = db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).get('settings');
-            req.onsuccess = () => res(req.result);
-            req.onerror = () => res(null);
-          });
+          if (Array.isArray(savedTodos)) todos = savedTodos;
         } catch (e) {}
       }
-
-      if (Array.isArray(loadedTodos)) todos = loadedTodos;
-      if (loadedSettings) settings = { ...settings, ...loadedSettings };
     }
 
-    // --- 초기화 ---
+    // --- 사운드 모드 제어 (소리모드 vs 진동모드) ---
+    function updateSoundModeUI() {
+      const btn = document.getElementById('soundModeBtn');
+      if (settings.soundMode === 'vibrate') {
+        btn.innerText = '📳 진동 모드';
+        btn.className = 'bg-amber-600 hover:bg-amber-700 px-2 py-0.5 rounded text-[11px] font-semibold text-white';
+      } else {
+        btn.innerText = '🔔 소리 모드';
+        btn.className = 'bg-indigo-700 hover:bg-indigo-800 px-2 py-0.5 rounded text-[11px] font-semibold text-white';
+      }
+    }
+
+    function toggleSoundMode() {
+      settings.soundMode = (settings.soundMode === 'sound') ? 'vibrate' : 'sound';
+      saveAll();
+      updateSoundModeUI();
+      if (settings.soundMode === 'vibrate') {
+        triggerSingleVibration();
+      } else {
+        playSingleBeep();
+      }
+    }
+
+    // 1회 단일 진동
+    function triggerSingleVibration() {
+      if ('vibrate' in navigator) {
+        try {
+          navigator.vibrate(400); // 400ms 동안 1회 진동
+        } catch (e) {}
+      }
+    }
+
+    // 1회 단일 알람음 (코드가 직접 부드러운 2중 톤 1회 재생)
+    function playSingleBeep() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const tones = [587.33, 880.00]; // 레(D5) - 라(A5) 깔끔한 1회 알람
+        tones.forEach((freq, idx) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime + idx * 0.16);
+          gain.gain.setValueAtTime(0.2, audioCtx.currentTime + idx * 0.16);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + idx * 0.16 + 0.14);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(audioCtx.currentTime + idx * 0.16);
+          osc.stop(audioCtx.currentTime + idx * 0.16 + 0.15);
+        });
+      } catch (e) {}
+    }
+
+    // 초기화
     window.onload = async () => {
       setupSingleFilePWA();
       await loadAll();
@@ -465,6 +514,7 @@
       document.body.addEventListener('click', unlockMobileAudio, { once: true });
 
       syncSettingsUI();
+      updateSoundModeUI();
       renderTodos();
 
       setInterval(checkAlarmsEverySecond, 1000);
@@ -477,35 +527,123 @@
       } catch (e) {}
     }
 
-    function testAudioAndVoice() {
+    function testAlarmAndSound() {
       unlockMobileAudio();
-      playAlarmSound();
-      triggerCharacterEncourage();
+      fireAlarmDispatcher({ title: "테스트 목표", deadline: "현재" }, "알람 설정이 정상적으로 작동하고 있습니다.");
     }
 
-    async function toggleWakeLock() {
-      const btn = document.getElementById('wakeLockBtn');
-      if (!('wakeLock' in navigator)) {
-        alert('현재 브라우저는 화면 켜짐 유지를 지원하지 않습니다.');
+    // --- 알람 발생 디스패처 (요청 1, 2, 3 반영) ---
+    function fireAlarmDispatcher(todo, message) {
+      lastActiveAlarmText = `${todo.title}: ${message}`;
+
+      // [요구사항 2] 진동모드일 때는 진동만 1회, 소리모드일 때는 알람소리만 1회
+      if (settings.soundMode === 'vibrate') {
+        triggerSingleVibration();
+      } else {
+        playSingleBeep();
+      }
+
+      // [요구사항 3] 알람이 울릴 때 열정코치가 직접 음성으로 읽지 않음 (캐릭터 말풍선 텍스트만 업데이트)
+      updateCharacterMessage(`[알람] "${todo.title}" 마감 알람이 도착했습니다.`, false);
+
+      // [요구사항 1] 상단 알람 팝업 배너 표시 (화면 맨 위에 고정)
+      const banner = document.getElementById('topAlarmBanner');
+      document.getElementById('topAlarmTitle').innerText = `⏰ 마감 알람 (${todo.deadline || '마감'})`;
+      document.getElementById('topAlarmMessage').innerText = message;
+
+      const completeBtn = document.getElementById('topAlarmCompleteBtn');
+      completeBtn.onclick = () => {
+        dismissTopAlarm();
+        if (todo.id) toggleTodoComplete(todo.id);
+      };
+
+      banner.classList.remove('hidden');
+
+      // 시스템 브라우저 상단바 알림
+      if ("Notification" in window && Notification.permission === "granted") {
+        try {
+          new Notification("⏰ 메이트 To-Do 알람", { body: message, silent: true });
+        } catch (e) {}
+      }
+    }
+
+    function dismissTopAlarm() {
+      document.getElementById('topAlarmBanner').classList.add('hidden');
+    }
+
+    function speakCurrentAlarmText() {
+      if (lastActiveAlarmText) {
+        speakText(lastActiveAlarmText);
+      }
+    }
+
+    // --- 주기적 알람 체크 루프 ---
+    function checkAlarmsEverySecond() {
+      const statusEl = document.getElementById('alarmStatusText');
+      if (!settings.enableAlarm) {
+        statusEl.innerText = '알람 꺼짐';
         return;
       }
-      try {
-        if (!wakeLockSentinel) {
-          wakeLockSentinel = await navigator.wakeLock.request('screen');
-          btn.innerText = '💡 화면켜짐: ON';
-          btn.className = 'bg-amber-500 text-white px-2 py-0.5 rounded text-[11px] font-bold';
-          wakeLockSentinel.addEventListener('release', () => {
-            wakeLockSentinel = null;
-            btn.innerText = '💡 화면켜짐: OFF';
-            btn.className = 'bg-indigo-700 text-indigo-100 px-2 py-0.5 rounded text-[11px] font-semibold';
-          });
-        } else {
-          await wakeLockSentinel.release();
-          wakeLockSentinel = null;
+
+      const now = new Date();
+      const nowMs = now.getTime();
+      const todayStr = getLocalDateStr(now);
+      const currentHM = getLocalTimeStr(now);
+
+      const activeTodos = todos.filter(t => !t.completed && t.date === todayStr);
+      if (activeTodos.length === 0) {
+        statusEl.innerText = '할 일 없음';
+        return;
+      }
+
+      let nearestSec = Infinity;
+      let nearestTitle = '';
+
+      activeTodos.forEach(todo => {
+        if (!todo.nextAlarmAt) {
+          todo.nextAlarmAt = nowMs + (todo.intervalMinutes * 60 * 1000);
         }
-      } catch (e) {}
+
+        // 1. 마감 시간 정각 체크
+        if (currentHM === todo.deadline && !todo.deadlineAlerted) {
+          todo.deadlineAlerted = true;
+          todo.nextAlarmAt = nowMs + (todo.intervalMinutes * 60 * 1000);
+          saveAll();
+          fireAlarmDispatcher(todo, `"${todo.title}" 목표하신 마감 시간(${todo.deadline})이 되었습니다!`);
+        } 
+        // 2. 주기 알람 도달 체크
+        else if (nowMs >= todo.nextAlarmAt) {
+          todo.nextAlarmAt = nowMs + (todo.intervalMinutes * 60 * 1000);
+          saveAll();
+          const isOver = currentHM > todo.deadline;
+          const msg = isOver 
+            ? `"${todo.title}" 마감 시간이 지났습니다. 지금 마무리해 볼까요?`
+            : `"${todo.title}" 목표 마감(${todo.deadline})을 향해 잘 진행되고 있나요?`;
+          fireAlarmDispatcher(todo, msg);
+        }
+
+        const secToNext = Math.max(0, Math.floor((todo.nextAlarmAt - nowMs) / 1000));
+        if (secToNext < nearestSec) {
+          nearestSec = secToNext;
+          nearestTitle = todo.title;
+        }
+
+        const badgeEl = document.getElementById(`timer-${todo.id}`);
+        if (badgeEl) {
+          const m = Math.floor(secToNext / 60);
+          const s = String(secToNext % 60).padStart(2, '0');
+          badgeEl.innerText = `다음 알람 ${m}분 ${s}초 후`;
+        }
+      });
+
+      if (nearestSec !== Infinity) {
+        const m = Math.floor(nearestSec / 60);
+        const s = String(nearestSec % 60).padStart(2, '0');
+        statusEl.innerText = `${nearestTitle.slice(0, 7)}… ${m}분 ${s}초`;
+      }
     }
 
+    // --- 캐릭터 음성 (TTS: 알람 외 완료 축하 시 등에만 사용) ---
     function speakText(text) {
       if (!settings.enableVoice || !('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
@@ -517,7 +655,7 @@
       window.speechSynthesis.speak(utter);
     }
 
-    function updateCharacterMessage(msg, speak = true) {
+    function updateCharacterMessage(msg, speak = false) {
       if (!settings.enableCharacter) return;
       document.getElementById('charBubble').innerText = msg;
       if (speak) speakText(msg);
@@ -529,6 +667,7 @@
       updateCharacterMessage(msg, true);
     }
 
+    // --- 할 일 등록 및 완료 ---
     function addTodo() {
       unlockMobileAudio();
       const titleInput = document.getElementById('todoInput');
@@ -537,7 +676,7 @@
 
       const title = titleInput.value.trim();
       if (!title) {
-        alert('할 일 내용을 입력해 주세요!');
+        alert('할 일을 입력해 주세요!');
         return;
       }
 
@@ -561,134 +700,7 @@
       saveAll();
       renderTodos();
 
-      updateCharacterMessage(`"${title}" 등록 완료! 마감(${newTodo.deadline}) 전까지 ${intervalMin}분마다 챙겨드릴게요!`, true);
-    }
-
-    function checkAlarmsEverySecond() {
-      const statusEl = document.getElementById('alarmStatusText');
-      if (!settings.enableAlarm) {
-        statusEl.innerText = '알람 기능 꺼짐';
-        return;
-      }
-
-      const now = new Date();
-      const nowMs = now.getTime();
-      const todayStr = getLocalDateStr(now);
-      const currentHM = getLocalTimeStr(now);
-
-      const activeTodos = todos.filter(t => !t.completed && t.date === todayStr);
-      if (activeTodos.length === 0) {
-        statusEl.innerText = '진행 중인 할 일 없음 (알람 대기 중)';
-        return;
-      }
-
-      let nearestSec = Infinity;
-      let nearestTitle = '';
-
-      activeTodos.forEach(todo => {
-        if (!todo.nextAlarmAt) {
-          todo.nextAlarmAt = nowMs + (todo.intervalMinutes * 60 * 1000);
-        }
-
-        if (currentHM === todo.deadline && !todo.deadlineAlerted) {
-          todo.deadlineAlerted = true;
-          todo.nextAlarmAt = nowMs + (todo.intervalMinutes * 60 * 1000);
-          saveAll();
-          fireAlarm(todo, `🚨 [마감 시간 도달!] "${todo.title}" 설정하신 마감 시간(${todo.deadline})이 되었습니다!`);
-        } else if (nowMs >= todo.nextAlarmAt) {
-          todo.nextAlarmAt = nowMs + (todo.intervalMinutes * 60 * 1000);
-          saveAll();
-          const isOver = currentHM > todo.deadline;
-          const msg = isOver
-            ? `⏰ [마감 초과 독려] "${todo.title}" 마감(${todo.deadline})이 지났어요! 지금 끝내볼까요?`
-            : `🔔 [${todo.intervalMinutes}분 주기 알람] "${todo.title}" (마감 ${todo.deadline}) 진행 중이신가요? 힘내세요!`;
-          fireAlarm(todo, msg);
-        }
-
-        const [dH, dM] = todo.deadline.split(':').map(Number);
-        const deadlineDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), dH, dM, 0);
-        const secToPeriodic = Math.max(0, Math.floor((todo.nextAlarmAt - nowMs) / 1000));
-        const secToDeadline = deadlineDate > now ? Math.floor((deadlineDate - nowMs) / 1000) : Infinity;
-
-        const minSec = Math.min(secToPeriodic, secToDeadline);
-        if (minSec < nearestSec) {
-          nearestSec = minSec;
-          nearestTitle = todo.title;
-        }
-
-        const badgeEl = document.getElementById(`timer-${todo.id}`);
-        if (badgeEl) {
-          const m = Math.floor(secToPeriodic / 60);
-          const s = String(secToPeriodic % 60).padStart(2, '0');
-          badgeEl.innerText = `다음 알람 ${m}분 ${s}초 후`;
-        }
-      });
-
-      if (nearestSec !== Infinity) {
-        const m = Math.floor(nearestSec / 60);
-        const s = String(nearestSec % 60).padStart(2, '0');
-        statusEl.innerText = `다음 알람(${nearestTitle.slice(0, 8)})까지 ${m}분 ${s}초`;
-      }
-    }
-
-    function fireAlarm(todo, message) {
-      playAlarmSound();
-      if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 600]);
-      updateCharacterMessage(message, true);
-
-      document.getElementById('alarmModalDesc').innerText = message;
-      const completeBtn = document.getElementById('alarmModalCompleteBtn');
-      completeBtn.onclick = () => {
-        dismissAlarmModal();
-        toggleTodoComplete(todo.id);
-      };
-      document.getElementById('alarmActiveModal').classList.remove('hidden');
-      document.getElementById('alarmActiveModal').classList.add('flex');
-
-      if ("Notification" in window && Notification.permission === "granted") {
-        try {
-          new Notification("✨ 메이트 To-Do 알람", { body: message, requireInteraction: true });
-        } catch (e) {}
-      }
-    }
-
-    function dismissAlarmModal() {
-      document.getElementById('alarmActiveModal').classList.add('hidden');
-      document.getElementById('alarmActiveModal').classList.remove('flex');
-    }
-
-    function playAlarmSound() {
-      try {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-
-        const notes = [523.25, 659.25, 783.99, 1046.50];
-        notes.forEach((freq, idx) => {
-          const osc = audioCtx.createOscillator();
-          const gain = audioCtx.createGain();
-          osc.type = 'triangle';
-          osc.frequency.setValueAtTime(freq, audioCtx.currentTime + idx * 0.18);
-          gain.gain.setValueAtTime(0.25, audioCtx.currentTime + idx * 0.18);
-          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + idx * 0.18 + 0.16);
-          osc.connect(gain);
-          gain.connect(audioCtx.destination);
-          osc.start(audioCtx.currentTime + idx * 0.18);
-          osc.stop(audioCtx.currentTime + idx * 0.18 + 0.17);
-        });
-      } catch (e) {}
-    }
-
-    function openGalaxyCalendarAlarm(id) {
-      const todo = todos.find(t => t.id === id);
-      if (!todo) return;
-      const [h, m] = todo.deadline.split(':').map(Number);
-      const start = new Date();
-      start.setHours(h, m, 0);
-      const end = new Date(start.getTime() + 30 * 60 * 1000);
-
-      const fmt = (d) => d.toISOString().replace(/-|:|\.\d+/g, '');
-      const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent('[To-Do 마감] ' + todo.title)}&dates=${fmt(start)}/${fmt(end)}&details=${encodeURIComponent('메이트 To-Do 할 일 마감 알람입니다.')}`;
-      window.open(url, '_blank');
+      updateCharacterMessage(`"${title}" 등록 완료! (마감 ${newTodo.deadline})`, false);
     }
 
     function toggleTodoComplete(id) {
@@ -700,16 +712,18 @@
       todo.completedAt = todo.completed ? new Date().toISOString() : null;
       saveAll();
       renderTodos();
+      dismissTopAlarm();
 
       if (todo.completed) {
         const p = personas[settings.persona];
         const praiseMsg = p.praise[Math.floor(Math.random() * p.praise.length)];
         const rewardSuggestion = getContextReward(todo.title);
 
-        updateCharacterMessage(`${praiseMsg} 추천 보상: ${rewardSuggestion}`, true);
+        // 완료 시에는 칭찬 음성 재생
+        updateCharacterMessage(`${praiseMsg} 보상 추천: ${rewardSuggestion}`, true);
 
         if (settings.enableReward) {
-          document.getElementById('modalPraise').innerText = `"${todo.title}" 완수를 축하합니다! ${praiseMsg}`;
+          document.getElementById('modalPraise').innerText = `"${todo.title}" 완수! ${praiseMsg}`;
           document.getElementById('modalRewardText').innerText = rewardSuggestion;
           document.getElementById('rewardModal').classList.remove('hidden');
           document.getElementById('rewardModal').classList.add('flex');
@@ -719,21 +733,14 @@
 
     function getContextReward(title) {
       const t = title.toLowerCase();
-      if (t.includes('영어') || t.includes('공부') || t.includes('강의') || t.includes('독서') || t.includes('복습')) {
-        return '☕ 향긋한 커피나 차 한 잔 마시며 좋아하는 유튜브 영상 15분 감상하기';
-      } else if (t.includes('운동') || t.includes('스쿼트') || t.includes('산책') || t.includes('체력') || t.includes('스트레칭')) {
-        return '🚿 개운하게 따뜻한 샤워 후 시원한 음료 즐기며 휴식하기';
-      } else if (t.includes('코드') || t.includes('업무') || t.includes('테스트') || t.includes('리뷰') || t.includes('문서') || t.includes('정리')) {
-        return '🍫 달콤한 간식 타임 갖기 & 눈 감고 10분간 좋아하는 음악 듣기';
-      } else if (t.includes('청소') || t.includes('설거지') || t.includes('빨래') || t.includes('집안일')) {
-        return '🛋️ 쾌적해진 공간에서 소파에 편하게 누워 20분간 자유 시간 만끽하기';
+      if (t.includes('영어') || t.includes('공부') || t.includes('독서') || t.includes('강의')) {
+        return '☕ 좋아하는 커피/음료 한 잔과 함께 편안한 휴식 15분';
+      } else if (t.includes('운동') || t.includes('스쿼트') || t.includes('스트레칭') || t.includes('산책')) {
+        return '🚿 따뜻한 샤워 후 시원한 탄산수나 과일 음료 즐기기';
+      } else if (t.includes('업무') || t.includes('코드') || t.includes('리뷰') || t.includes('정리')) {
+        return '🍫 달콤한 간식 한 조각 & 10분간 눈 감고 음악 감상하기';
       } else {
-        const generalRewards = [
-          '🍵 좋아하는 음료와 함께 창밖 보며 10분간 여유 즐기기',
-          '🎵 아끼는 플레이리스트 틀어놓고 기분 전환 스트레칭 하기',
-          '🍰 오늘 저녁 맛있는 간식이나 디저트 스스로에게 선물하기'
-        ];
-        return generalRewards[Math.floor(Math.random() * generalRewards.length)];
+        return '🛋️ 푹신한 소파에 누워 15분간 좋아하는 영상 시청하기';
       }
     }
 
@@ -761,7 +768,7 @@
       document.getElementById('todayProgressText').innerText = `${pct}% (${done}/${total})`;
 
       if (visibleTodos.length === 0) {
-        container.innerHTML = `<div class="text-center py-10 text-gray-400 text-xs">등록된 할 일이 없습니다.<br>위 입력창에서 오늘 할 일을 추가해 보세요!</div>`;
+        container.innerHTML = `<div class="text-center py-10 text-gray-400 text-xs">등록된 할 일이 없습니다.<br>오늘의 목표를 추가해 보세요!</div>`;
         return;
       }
 
@@ -784,13 +791,27 @@
           ${!todo.completed ? `
           <div class="pt-1.5 border-t border-gray-50 flex justify-end">
             <button onclick="openGalaxyCalendarAlarm(${todo.id})" class="text-[11px] text-indigo-600 hover:underline flex items-center space-x-1">
-              <span>📲 화면 꺼짐 대비 갤럭시 캘린더 알람 등록</span>
+              <span>📲 화면 꺼짐 대비 캘린더 알람 등록</span>
             </button>
           </div>` : ''}
         </div>
       `).join('');
     }
 
+    function openGalaxyCalendarAlarm(id) {
+      const todo = todos.find(t => t.id === id);
+      if (!todo) return;
+      const [h, m] = todo.deadline.split(':').map(Number);
+      const start = new Date();
+      start.setHours(h, m, 0);
+      const end = new Date(start.getTime() + 30 * 60 * 1000);
+
+      const fmt = (d) => d.toISOString().replace(/-|:|\.\d+/g, '');
+      const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent('[마감] ' + todo.title)}&dates=${fmt(start)}/${fmt(end)}&details=${encodeURIComponent('메이트 To-Do 마감 알람')}`;
+      window.open(url, '_blank');
+    }
+
+    // --- 통계 및 설정 탭 ---
     function switchStatView(mode) {
       currentStatMode = mode;
       ['daily', 'weekly', 'monthly'].forEach(m => {
@@ -822,7 +843,7 @@
           },
           options: { responsive: true, maintainAspectRatio: false }
         });
-        document.getElementById('statSummaryText').innerText = `오늘 전체 ${todayList.length}건 중 ${done}건을 완료했습니다.`;
+        document.getElementById('statSummaryText').innerText = `오늘 ${todayList.length}건 중 ${done}건 완료`;
       } 
       else if (currentStatMode === 'weekly') {
         const labels = [];
@@ -844,7 +865,7 @@
           },
           options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 100 } } }
         });
-        document.getElementById('statSummaryText').innerText = `최근 7일간 요일별 할 일 달성률(%) 추이입니다.`;
+        document.getElementById('statSummaryText').innerText = `최근 7일간 요일별 달성률(%)`;
       } 
       else if (currentStatMode === 'monthly') {
         const labels = ['3주 전', '2주 전', '지난주', '이번 주'];
@@ -865,7 +886,7 @@
           },
           options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
         });
-        document.getElementById('statSummaryText').innerText = `최근 4주간 주차별 완료한 총 할 일 건수입니다.`;
+        document.getElementById('statSummaryText').innerText = `최근 4주간 주차별 완료 수`;
       }
 
       const taskMap = {};
@@ -885,9 +906,9 @@
       breakdownEl.innerHTML = entries.length ? entries.map(([name, cnt]) => `
         <div class="flex justify-between items-center py-1.5 border-b border-gray-100">
           <span class="font-medium text-gray-800">${name}</span>
-          <span class="text-indigo-600 font-semibold">이번 주 ${cnt.weekDone}회 / 이달 ${cnt.monthDone}회 완료</span>
+          <span class="text-indigo-600 font-semibold">주 ${cnt.weekDone}회 / 월 ${cnt.monthDone}회 완료</span>
         </div>
-      `).join('') : '<p class="text-gray-400">아직 등록된 할 일 데이터가 없습니다.</p>';
+      `).join('') : '<p class="text-gray-400">데이터가 없습니다.</p>';
     }
 
     function exportDataFile() {
@@ -913,12 +934,32 @@
           saveAll();
           syncSettingsUI();
           renderTodos();
-          alert('백업 데이터를 성공적으로 복원했습니다!');
+          alert('복원되었습니다!');
         } catch (err) {
-          alert('올바른 백업 파일이 아닙니다.');
+          alert('올바른 파일이 아닙니다.');
         }
       };
       reader.readAsText(file);
+    }
+
+    async function toggleWakeLock() {
+      const btn = document.getElementById('wakeLockBtn');
+      if (!('wakeLock' in navigator)) return;
+      try {
+        if (!wakeLockSentinel) {
+          wakeLockSentinel = await navigator.wakeLock.request('screen');
+          btn.innerText = '💡 화면켜짐: ON';
+          btn.className = 'bg-amber-500 text-white px-2 py-0.5 rounded text-[11px] font-bold';
+          wakeLockSentinel.addEventListener('release', () => {
+            wakeLockSentinel = null;
+            btn.innerText = '💡 화면켜짐: OFF';
+            btn.className = 'bg-indigo-700 text-indigo-100 px-2 py-0.5 rounded text-[11px] font-semibold';
+          });
+        } else {
+          await wakeLockSentinel.release();
+          wakeLockSentinel = null;
+        }
+      } catch (e) {}
     }
 
     function syncSettingsUI() {
@@ -958,13 +999,11 @@
     }
 
     function requestNotificationPermission() {
-      if (!("Notification" in window)) {
-        alert("현재 브라우저는 시스템 알림을 지원하지 않습니다.");
-        return;
+      if ("Notification" in window) {
+        Notification.requestPermission().then(p => {
+          if (p === "granted") alert("알림 권한이 허용되었습니다!");
+        });
       }
-      Notification.requestPermission().then(permission => {
-        if (permission === "granted") alert("갤럭시 상단바 알림 권한이 허용되었습니다!");
-      });
     }
 
     function switchTab(tabName) {
